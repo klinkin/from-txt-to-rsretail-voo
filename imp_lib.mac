@@ -1,0 +1,92 @@
+macro FindBranch(_branch)
+    private file BranchList ("listfdep.dbt", "sbbank.def") key 0;
+    var stat;
+    
+    BranchList.FNCash = _branch;
+    stat = GetEQ(BranchList);
+    if (stat)
+        return BranchList.FNCash;
+    else
+        return False;
+    end;
+end;
+
+private macro DayWright ( d, m, y )
+    private var DayMes = TArray;
+    DayMes( 1 ) = 31; DayMes( 4 ) = 30;  DayMes( 7 ) = 31; DayMes( 10 ) = 31;
+    DayMes( 2 ) = 28; DayMes( 5 ) = 31;  DayMes( 8 ) = 31; DayMes( 11 ) = 30;
+    DayMes( 3 ) = 31; DayMes( 6 ) = 30;  DayMes( 9 ) = 30; DayMes( 12 ) = 31;
+
+   if ( ( d <= DayMes ( m ) ) or ( d == 29 ) and ( mod (y, 4) == 0 ) )
+       return true;
+   else
+       return false;
+   end;
+end;
+
+macro StrToDate(str_date: string, date_date, errmsg)
+    var Razd, day, mon, year;
+    
+    if ( StrBrk (str_date, ".-/") == 0 )
+      errmsg = "(1) Неверный формат даты " + str_date;
+      setparm(3, errmsg);
+      return False;
+    end;
+    
+    if ( Index( str_date, "." ) > 0 )
+        Razd = ".";
+    elif ( Index( str_date, "-" ) > 0 )
+        Razd = "-";
+    elif ( Index( str_date, "/" ) > 0 )
+        Razd = "/";
+    end;
+    
+    day = int(SubStr( str_date, 1, Index(str_date, Razd) - 1));
+    str_date = SubStr( str_date, Index(str_date, Razd) + 1);
+    mon = int(SubStr( str_date, 1, Index( str_Date, Razd ) - 1));
+    str_date = SubStr( str_date, Index( str_date, Razd) + 1);
+    year = int(str_date);
+    
+    if ( ( ( year == 0 ) and ( mon == 0 ) and ( day == 0 ) ) or
+         ( ( year > 0 ) and
+           ( mon > 0 )  and ( mon < 13 ) and
+           ( day > 0 )  and ( day < 32 ) and
+           DayWright (day, mon, year) )
+       )
+      setparm(1, date( day, mon, year));
+      return True;
+    else
+      errmsg = "(1) Неверная дата " + str_date;
+      setparm(2, errmsg);
+      return False;
+    end;
+end;
+
+//macro iif(lIf,IfTrue,IfFalse)
+macro zif(lIf,IfTrue,IfFalse)
+    if (lIf)
+        return(IfTrue);
+    else
+        return(IfFalse);
+    end;
+end;
+
+macro getError( msg )
+    var f_sbbank = Tbfile( "sbbank.msg", "r", 0, null, "sbbank.def" );
+    f_sbbank.rewind();  f_sbbank.clear();
+
+//начало  Перов вместо одной строки будет 
+//    f_sbbank.rec.Number = msg;
+    if(msg != TRUE)
+       f_sbbank.rec.Number = 1;
+    end;
+// конец Перов
+
+    if( f_sbbank.getEQ() )
+        return "Error code:" + string(msg) + " - " + f_sbbank.rec.Contents;
+    else
+        return "Error code:" + string(msg);
+    end;
+
+end;
+

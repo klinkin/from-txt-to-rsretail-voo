@@ -1,0 +1,365 @@
+import rtreport, rsexts;
+
+import imp_lib;
+
+// к сожалению, в классе это объявить нельзя
+file fileLog() txt 2048 append;
+file fileTxt() txt 2048 write;
+   
+// Класс для печати лога по процедуре "Загрузка ВОО из внешней системы"
+class CImportLog( nameFile, nameFileTxt )
+    var flagOpenLog = false, flagOpenTxt = false; // флаг, указывающий, что файл открыт
+    var strFile; // строка файла
+
+    var countIn = 0, countErrIn = 0; // количество операций
+    var countChangeRate = 0, countErrChangeRate = 0; // количество смен
+    var countRate = 0, countErrRate = 0; // количество курсов
+
+    macro Constructor( nameFile, nameFileTxt )
+       var listFile = TDirList();
+       
+       listFile.List(nameFile, "F");
+   
+       if(listFile.Count == 0)
+          // создаем файл
+          flagOpenLog = Open( fileLog, nameFile );
+          strFile = "                      Лог по процедуре \"Загрузка ВОО из внешней системы\"\n";
+          insert(fileLog, strFile);
+       else
+          flagOpenLog = Open( fileLog, nameFile );
+       end;
+       // открываем файл для одного сеанса связи
+       if( nameFileTxt )
+          flagOpenTxt = Open( fileTxt, nameFileTxt );
+          strFile = "                      Лог по процедуре \"Загрузка ВОО из внешней системы\"\n";
+          insert( fileTxt, strFile );
+       end;
+       strFile = "";
+    end;
+    // --- Деструктор ---
+    macro Destructor
+       // закрываем файл
+       if( flagOpenLog )
+          Close(fileLog);
+       end;
+       if( flagOpenTxt )
+          Close(fileTxt);
+          ViewFile(fileTxt);
+       end;
+    end;
+    // --- Печать 1 ячейки ---
+    macro Cell( str, size )
+       return str + MkStr(" ", size-StrLen(str));
+    end;
+    macro GetCodeCurrency( extCurr )
+
+        var f_currency = TBFile( "rtcurr.dbt", "r", 1, null, "sbbank.def" );
+   
+        f_currency.rewind(); f_currency.clear();
+        f_currency.rec.ExternalCode = String(extCurr);
+        f_currency.getEQ();
+
+        return f_currency.rec.Short_Name;
+    end;
+
+    // --- Печать шапки лога ---
+    macro OpenFile(file_name)
+       strFile = "Открываем файл: " + String(file_name) + ". Дата/время: " + String(Date()) + "  " + String(Time()) + "\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+       strFile = "";
+    end;
+    // --- Печать шапки лога ---
+    macro Header( file_name, FNcash )
+   
+       strFile = "Обработан файл: " + String(file_name) + "\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+   
+       strFile = "Дата обработки: " + String(Date()) + "  " + String(Time()) + "\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+   
+       strFile = "Дата операционого дня: " + String({curdate}) + "\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+   
+       strFile = "Дополнительный офис: " + RtReport_getBranchFullName(FNcash) + "\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+   
+       strFile = "Операционист: " + String({oper}) + "  " + RtReport_getPersonFIO({oper}) + "\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+       strFile = "";
+    end;
+
+    // --- Печать шапки смены ---
+    macro HeaderChangeRate(i)
+        if( strFile == "" ) // если пустая, то были операции
+            strFile = "Смена курсов валют номер " + i + "\n" +
+                      "┌─────────────────┬──────┬──────────┬─────────┬──────────┬─────────┬──────────┬─────────┬───────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐\n"+
+                      "│   № смены       │№ Офис│  Дата    │ Время   │ Д.начало │ В.начало│ Д.окон.  │ В.окон  │ № Распор  │  Ошибки                                                                                                                             │\n"+
+                      "├─────────────────┼──────┼──────────┼─────────┼──────────┼─────────┼──────────┼─────────┼───────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤";
+
+
+            insert( fileLog, strFile );
+            if( flagOpenTxt )
+               insert( fileTxt, strFile );
+            end;
+        end;
+        strFile = "";
+    end;
+
+    // --- Печатаем строку по смене---
+    macro StringChangeRate(change_rate)
+
+        var strError = "";
+        var i = 0;
+        if( change_rate.Errors.size() != 0 )
+            while( i < change_rate.Errors.size() )
+               strError = strError + change_rate.Errors[i];
+               i = i + 1;
+            end;
+        end;
+
+        strFile = strFile + "│" + Cell(string(change_rate.ext_id     ), 17 ) + "│" +   
+                                  Cell(string(change_rate.branch     ), 6  ) + "│" + 
+                                  Cell(string(change_rate.set_date   ), 7  ) + "│" +  
+                                  Cell(string(change_rate.set_time   ), 9  ) + "│" +  
+                                  Cell(string(change_rate.start_date ), 8  ) + "│" +  
+                                  Cell(string(change_rate.start_time ), 9  ) + "│" +  
+//                                  Cell(iif(change_rate.stop_date!=date(0,0,0), string(change_rate.stop_date), " текущий  ") , 9 ) + "│" +  
+//                                  Cell(iif(change_rate.stop_time!=time(0,0), string(change_rate.stop_time), " текущий ") , 9 ) + "│" +  
+                                  Cell(zif(change_rate.stop_date!=date(0,0,0), string(change_rate.stop_date), " текущий  ") , 9 ) + "│" +  
+                                  Cell(zif(change_rate.stop_time!=time(0,0), string(change_rate.stop_time), " текущий ") , 9 ) + "│" +  
+                                  Cell(string(change_rate.orderid    ), 11 ) + "│" +  
+                                  Cell(string(strError               ), 133) + "│";
+                                                                                                                                       
+        insert( fileLog, strFile );
+        if( flagOpenTxt )
+           insert( fileTxt, strFile );
+        end;
+        strFile = "";
+        if( change_rate.Errors.size() != 0 )
+           countErrChangeRate = countErrChangeRate + 1;
+        end;
+        countChangeRate = countChangeRate + 1;
+    end;
+
+    // --- Конец таблицы по смене ---
+    macro BotChangeRate()
+        if( strFile == "" )
+            strFile = "└─────────────────┴──────┴──────────┴─────────┴──────────┴─────────┴──────────┴─────────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘";
+
+            insert( fileLog, strFile );
+            if( flagOpenTxt )
+               insert( fileTxt, strFile );
+            end;
+        end;
+        strFile = "";
+    end;
+
+    // --- Печать шапки самих курсов ---
+    macro HeaderRate()
+        if( strFile == "" ) // если пустая, то были операции
+            strFile = "Курсы валют\n"+
+                      "┌─────────────────┬────────┬─────────┬────────────┬────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐\n"+
+                      "│   № курса       │ Валюта │ Курс ЦБ │ Курс покуп.│ Курс прод. │  Ошибки                                                                                                                             │\n"+
+                      "├─────────────────┼────────┼─────────┼────────────┼────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤";
+
+
+                      
+            insert( fileLog, strFile );
+            if( flagOpenTxt )
+               insert( fileTxt, strFile );
+            end;
+        end;
+        strFile = "";
+    end;
+
+    // --- Печатаем строку по курсам---
+    macro StringRate(rate)
+
+        var strError = "";
+        var i = 0;
+        if( rate.Errors.size() != 0 )
+            while( i < rate.Errors.size() )
+               strError = strError + rate.Errors[i];
+               i = i + 1;
+            end;
+        end;
+
+        strFile = strFile + "│" + Cell(string(rate.ext_id     ), 17 ) + "│" +   
+                                  Cell(string(rate.val        ), 8  ) + "│" +  
+                                  Cell(string(rate.cbrate     ), 9  ) + "│" +  
+                                  Cell(string(rate.buyrate    ), 12 ) + "│" +  
+                                  Cell(string(rate.sellrate   ), 12 ) + "│" +  
+                                  Cell(string(strError        ), 133) + "│";
+                                                                                                                                       
+        insert( fileLog, strFile );
+        if( flagOpenTxt )
+           insert( fileTxt, strFile );
+        end;
+        strFile = "";
+        if( rate.Errors.size() != 0 )
+           countErrRate = countErrRate + 1;
+        end;
+        countRate = countRate + 1;
+    end;
+
+    // --- Конец таблицы по курсам ---
+    macro BotRate()
+        if( strFile == "" )
+            strFile = "└─────────────────┴────────┴─────────┴────────────┴────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘";                      
+
+            insert( fileLog, strFile );
+            if( flagOpenTxt )
+               insert( fileTxt, strFile );
+            end;
+        end;
+        strFile = "";
+    end;
+
+
+
+    // --- Печать шапки табл. по операциям ---
+    macro HeaderIncoming()
+        if( strFile == "" ) // если пустая, то были операции
+            strFile = "\n" +
+                      "Загружаемые валюто-обменные операции\n" + 
+                      "┌──────────┬──────┬───────┬───────────────────┬──────────┬─────┬──────────┬─────────┬──────┬──────────┬───────┬──────────┬──────┬─────────┬──────────────────────┬───────────┬───────────┬───────────┬───────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────┐\n"+
+                      "│№ операции│№ Офис│ Юзер  │       ФИО         │Опер.день │ Тип │  Дата    │ Время   │Вал.IN│ Сумма.IN │Вал.OUT│ Сумма.OUT│ Курс │ Курс ЦБ │   Id смены           │ Фамилия   │ Имя       │ Отчество  │ Рез.  │   Ошибка                                                                                                   │\n"+
+                      "├──────────┼──────┼───────┼───────────────────┼──────────┼─────┼──────────┼─────────┼──────┼──────────┼───────┼──────────┼──────┼─────────┼──────────────────────┼───────────┼───────────┼───────────┼───────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────┤";
+
+                      
+                      
+            insert( fileLog, strFile );
+            if( flagOpenTxt )
+               insert( fileTxt, strFile );
+            end;
+        end;
+        strFile = "";
+    end;
+   
+    // --- Печатаем строку по операции---
+    macro StringIncoming( operation)
+
+        var strError = "";
+        var i = 0;
+        if( operation.Errors.size() != 0 )
+            while( i < operation.Errors.size() )
+               strError = strError + operation.Errors[i];
+               i = i + 1;
+            end;
+        end;
+
+        strFile = strFile + "│" + Cell(string(operation.ext_id                       ), 10 ) + "│" +   
+                                  Cell(string(operation.branch                       ), 6  ) + "│" + 
+                                  Cell(string(operation.oper_id                      ), 7  ) + "│" +  
+                                  Cell(string(operation.oper_fio                     ), 19 ) + "│" +  
+                                  Cell(string(operation.curdate                      ), 8  ) + "│" +  
+                                  Cell(string(operation.kind_oper                    ), 5  ) + "│" +  
+                                  Cell(string(operation.date_m                       ), 7  ) + "│" +  
+                                  Cell(string(operation.time_m                       ), 9  ) + "│" +  
+                                  Cell(string(GetCodeCurrency(operation.income_val)  ), 6  ) + "│" +  
+                                  Cell(string(operation.income_amount                ), 10 ) + "│" +  
+                                  Cell(string(GetCodeCurrency(operation.out_val)     ), 7  ) + "│" +  
+                                  Cell(string(operation.out_amount                   ), 10 ) + "│" +  
+                                  Cell(string(operation.kurs                         ), 6  ) + "│" +  
+                                  Cell(string(operation.cbrate                       ), 9  ) + "│" +  
+                                  Cell(string(operation.ratechng                     ), 22 ) + "│" +  
+                                  Cell(string(operation.sname                        ), 11 ) + "│" +  
+                                  Cell(string(operation.name                         ), 11 ) + "│" +  
+                                  Cell(string(operation.pname                        ), 11 ) + "│" +  
+                                  Cell(string(operation.GetResident()                ), 7  ) + "│" +  
+                                  Cell(string(strError                               ), 108) + "│";
+                                                                                                                                       
+        insert( fileLog, strFile );
+        if( flagOpenTxt )
+           insert( fileTxt, strFile );
+        end;
+        strFile = "";
+        if( operation.Errors.size() != 0 )
+           countErrIn = countErrIn + 1;
+        end;
+        countin  = countIn  + 1;
+    end;
+    // --- Конец таблицы по операциям ---
+    macro BotIncoming
+        if( strFile == "" ) // если пустая, то были входящие переводы
+            strFile = "└──────────┴──────┴───────┴───────────────────┴──────────┴─────┴──────────┴─────────┴──────┴──────────┴───────┴──────────┴──────┴─────────┴──────────────────────┴───────────┴───────────┴───────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────┘";
+            insert( fileLog, strFile );
+            if( flagOpenTxt )
+               insert( fileTxt, strFile );
+            end;
+        end;
+        strFile = "";
+    end;
+    // --- Конец лога ---
+    macro EndLog( oper )
+       strFile = "\n" + "Исполнитель: " + RtReport_getPersonFIO( oper ) + "\n\n";
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+       strFile = "";
+    end;
+    // --- Печать строки сообщений ---
+    macro Msg(msg)
+       strFile = strFile + msg;
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+    end; 
+    // --- Печать строки ---
+    macro MsgLn(msg)
+       insert( fileLog, msg );
+       if( flagOpenTxt )
+          insert( fileTxt, msg );
+       end;
+    end; 
+    // --- Печать строки итого ---
+    macro Total()
+       strFile = "\nВсего смен:   " + String(countChangeRate);
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+       strFile = "из них с ошибками:  " + String(countErrChangeRate);
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+
+       strFile = "\nВсего операций:   " + String(countIn);
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+       strFile = "из них с ошибками:  " + String(countErrIn);
+       insert( fileLog, strFile );
+       if( flagOpenTxt )
+          insert( fileTxt, strFile );
+       end;
+       countChangeRate = 0;
+       countErrChangeRate = 0;
+       countIn     = 0;
+       countErrIn  = 0;
+    end;
+   
+    Constructor( nameFile, nameFileTxt );
+end;

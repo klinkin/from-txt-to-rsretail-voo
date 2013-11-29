@@ -1,0 +1,125 @@
+/*** Номера полей входного файла *********************************************/
+const RATE_EXT_ID          =  0,
+      RATE_BRANCH          =  1,
+      RATE_SET_DATE        =  2,
+      RATE_SET_TIME        =  3,
+      RATE_START_DATE      =  4,
+      RATE_START_TIME      =  5,
+      RATE_STOP_DATE       =  6,
+      RATE_STOP_TIME       =  7,
+      RATE_ORDERID         =  8,
+      RATE_VAL             =  9,
+      RATE_CBRATE          =  10,
+      RATE_BUYRATE         =  11,
+      RATE_SELLRATE        =  12;
+
+const OPER_EXT_ID            = 0,
+      OPER_BRANCH            = 1,
+      OPER_ID_CASHER         = 2,
+      OPER_FIO_CASHER        = 3,
+      OPER_CURDATE           = 4,
+      OPER_KIND_OPER         = 5,
+      OPER_DATE_M            = 6,
+      OPER_TIME_M            = 7,
+      OPER_INCOME_VAL        = 8,
+      OPER_INCOME_AMOUNT     = 9,
+      OPER_OUT_VAL           = 10,
+      OPER_OUT_AMOUNT        = 11,
+      OPER_KURS              = 12,
+      OPER_CBRATE            = 13,
+      OPER_RATECHNG          = 14,
+      OPER_SNAME             = 15,
+      OPER_NAME              = 16,
+      OPER_PNAME             = 17,
+      OPER_RESIDENT          = 18,
+      OPER_CLIENTDOCTYPE     = 19,
+      OPER_CLIENTDOCSERIA    = 20,
+      OPER_CLIENTDOCNUMBER   = 21,
+      OPER_CLIENTDOCINFO     = 22,
+      OPER_CLIENTDOCDATE     = 23,
+      OPER_CLIENTADDRESS     = 24,
+      OPER_CLIENTCOUNTRYCODE = 25,
+      OPER_INN               = 26,
+      OPER_CLIENTPHONE       = 27,
+      OPER_CLIENTBIRTHDAY    = 28,
+      OPER_CLIENTBIRTHPLACE  = 29,
+      OPER_ORDERNUM          = 30,
+      OPER_GROUND            = 31;
+
+
+const CRATE_SECTION = "#Curs";
+const COPER_SECTION = "#Oper";
+
+const CEND_RATE_SECTION = "#End Curs";
+const CEND_OPER_SECTION = "#End Oper";
+
+const LENIN       = " \"Ленинский проспект\" ";
+const OKVKULP     = "ОКВКУ ЛП";
+const KITAY       = "Китай-город";
+const SEVAS       = "Севастопольский";
+const BLAGOV      = "Благовещенск";
+const AKADEM      = "Академический";
+const UFIMSKY     = "Уфимский";
+const PROSPMIRA   = "Проспект Мира";
+const NOVOSIBIRSK = "Новосибирск";
+const NIGNY       = "Нижний";
+const PERMSKY     = "Пермский";
+const MOSCVOREZ   = "Москворецкий";
+const LUBLINO     = "Люблино";
+const MOSCOWSKY   = "Московский";
+
+
+macro getBranch(_str)
+//Msgbox("Выбираем подразделение");
+debugbreak();
+
+    if (StrUpr(Trim(_str)) == StrUpr(Trim(OKVKULP)))
+//        Msgbox("ОКВКУ");
+        return 13;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(LENIN)))
+//        Msgbox("ДО Ленинский");
+        return 12;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(KITAY)))
+//Msgbox("9"+StrUpr(Trim(_str)));
+        return 9;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(SEVAS)))
+//Msgbox("Севастопольский");
+        return 10;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(BLAGOV)))
+//Msgbox("Благовещенск");
+        return 14;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(AKADEM)))
+//Msgbox("Академический");
+        return 15;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(UFIMSKY)))
+//Msgbox("Уфимский");
+        return 16;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(PROSPMIRA)))
+//Msgbox("Проспект Мира");
+        return 17;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(NOVOSIBIRSK)))
+//Msgbox("Новосибирск");
+        return 18;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(NIGNY)))
+//Msgbox("Нижний");
+        return 19;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(MOSСOWSKY)))
+//Msgbox("Московский");
+        return 21;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(PERMSKY)))
+//Msgbox("Пермский");
+        return 22;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(MOSCVOREZ)))
+//Msgbox("Москворецкий");
+        return 23;
+    elif (StrUpr(Trim(_str)) == StrUpr(Trim(LUBLINO)))
+//Msgbox("Люблино");
+        return 24;
+
+
+    else
+Msgbox("-1"+StrUpr(Trim(_str)));
+//Msgbox("-1");
+        return -1;
+    end;
+end;

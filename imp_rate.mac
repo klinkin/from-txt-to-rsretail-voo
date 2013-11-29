@@ -1,0 +1,114 @@
+Import vars, BankInter, CommonInter, DeskInter, ExchangeInter, DeprIntr, or_rep_h, Cur_Rate, "define.mac";
+
+Import imp_const;
+
+// Класс курса
+class CRate(InputFile)
+    var 
+        ext_id           : String,       // 1 уникальный идентификатор операции во внешней системе
+        val              : String,       // 2 Код валюты
+        cbrate           : Double,       // 3 Курс ЦБ
+        buyrate          : Double,       // 4 Курс покупки
+        sellrate         : Double;       // 5 Курс продажи
+    
+    var Errors; // массив ошибок
+
+    var CurRate = TRecHandler( "cur_rate.dbt", "exchange.def");
+
+    macro Constructor(InputFile)
+       
+        private var in_item: String; 
+        private var date_value: Date;
+        var errmsg: String;
+
+        this.Errors = Tarray();
+
+        /* уникальный идентификатор курса во внешней системе */
+        in_item = InputFile( RATE_EXT_ID ) + InputFile( RATE_VAL ) ;
+        if ( in_item != "" )
+            this.ext_id = in_item;
+        else
+            //aMsg[aMsg.size]
+            this.Errors[this.Errors.size] = "(1) Не задан номер уникального идентификатора операции во внешней системе";
+        end;
+
+        /* валюта курса */
+        in_item = InputFile( RATE_VAL );
+        if ( in_item != "" )
+            this.val = in_item;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана валюта курса";
+        end;
+
+        /* курс ЦБ */
+        in_item = InputFile( RATE_CBRATE );
+        if ( in_item != "" )
+            this.cbrate = double(in_item)/10000;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан курс ЦБ";
+        end;
+
+        /* курс покупки */
+        in_item = InputFile( RATE_BUYRATE );
+        if ( in_item != "" )
+            this.buyrate = double(in_item)/10000;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан курс покупки";
+        end;
+
+        /* курс продажи */
+        in_item = InputFile( RATE_SELLRATE );
+        if ( in_item != "" )
+            this.sellrate = double(in_item)/10000;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан курс продажи";
+        end;
+    end;
+
+    macro PrepareCurRate()
+        var retail_code;
+        this.CurRate.Clear();
+
+        if ( this.val == "840" )
+            retail_code = 1;
+        elif ( this.val == "978" )
+            retail_code = 5;
+        end;
+
+        this.CurRate.rec.Curr_Ref    = retail_code;
+
+        this.CurRate.rec.CrossRate   = 1;
+        this.CurRate.rec.CBRate      = this.cbrate;
+        this.CurRate.rec.SellRate    = this.sellrate;
+        this.CurRate.rec.BuyRate     = this.buyrate;
+        this.CurRate.rec.ChangeNom   = 1;
+        this.CurRate.rec.RateFlag    = "X";
+        this.CurRate.rec.Point       = 0;
+        this.CurRate.rec.Reserve     = this.ext_id;
+
+    end;
+
+    macro MakeFaikRURRate(_ext_id)
+        this.ext_id                  = string(_ext_id) + "810";
+        this.val                     = "810";
+        this.cbrate                  = 1;
+        this.buyrate                 = 1;
+        this.sellrate                = 1;
+        this.Errors                  = Tarray();
+
+        this.CurRate.rec.Curr_Ref    = 0;
+        this.CurRate.rec.CrossRate   = 1;
+        this.CurRate.rec.CBRate      = 1;
+        this.CurRate.rec.SellRate    = 1;
+        this.CurRate.rec.BuyRate     = 1;
+        this.CurRate.rec.ChangeNom   = 1;
+        this.CurRate.rec.RateFlag    = "X";
+        this.CurRate.rec.Point       = 0;
+
+        return this;
+    end;
+
+    if (ValType (InputFile) == V_TXTFILE)
+        Constructor(InputFile);
+    end;
+end;

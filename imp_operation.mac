@@ -1,0 +1,456 @@
+Import vars, BankInter, CommonInter, DeskInter, ExchangeInter, DeprIntr, or_rep_h, Cur_Rate, "define.mac";
+Import imp_const;
+
+record exoperat ("exoperat.dbt", "exchange.def");
+record op_parm  ("op_parm.rec", "sbbank.def");
+
+private var {curdate};
+
+/********************** Korneev *************/
+private macro Macro_CarryGDDList()
+    return CarryGDDList();
+end; 
+/********************** Korneev *************/
+
+
+// Класс операции
+class COperation(InputFile)
+    var 
+        ext_id           : String,     // 0  уникальный идентификатор операции во внешней системе
+        branch           : Integer,    // 1  номер доп.офиса
+        oper_id          : Integer,    // 2  номер кассира jsCash
+        oper_fio         : String,     // 3  ФИО кассира jsCash 
+        curdate          : Date,       // 4  дата опер.дня
+        kind_oper        : Integer,    // 5  номер операции, 6 - покупка валюты, 7 - продажа валюты
+        date_m           : Date,       // 6  физическая дата проведения операции
+        time_m           : Time,       // 7  физическая время проведения операции
+        income_val       : String,     // 8  валюта, которую банк принимает
+        income_amount    : Numeric,    // 9  сумма, которую банк принимает. Указывается в копейках/центах. Например 100$ это 10000.
+        out_val          : String,     // 10 валюта, которую банк отдает
+        out_amount       : Numeric,    // 11 сумма, которую банк отдает. Указывается в копейках/центах. Например 1000руб это 100000.
+        kurs             : Numeric,    // 12 курс по которому прошла операция
+        cbrate           : Numeric,    // 13 курс ЦБ, действовавший на момент совершения операции
+        ratechng         : String,     // 14 id смены
+        sname            : String,     // 15 фамилия клиента
+        name             : String,     // 16 имя клиента
+        pname            : String,     // 17 отчество клиента
+        resident         : String,     // 18 признак резиденства клиента, 1 - резидент, 0 - нерезидент
+        clientdoctype    : Integer,    // 19 тип документа клиента, 0 - паспорт РФ
+        clientdocseria   : String,     // 20 серия документа клиента
+        clientdocnumber  : String,     // 21 номер документа клиента
+        clientdocinfo    : String,     // 22 кем выдан документ клиента
+        clientdocdate    : Date,       // 23 когда выдан документ клиента
+        clientaddress    : String,     // 24 адресс проживания клиента
+        clientcountrycode: String,     // 25 код страны клиента, 643 - Россия
+        inn              : String,     // 26 ИНН клиента
+        clientphone      : String,     // 27 номер телефона клиента
+        clientbirthday   : Date,       // 28 дата рождения клиента
+        clientbirthplace : String,     // 29 место рождения клиента
+        ordernum         : String,     // 30 номер ордера
+        ground           : String;     // 31 основание операции
+                                             
+
+    var Errors; // массив ошибок
+
+    macro Constructor(InputFile)
+       
+        private var in_item: String; 
+        private var date_value: Date;
+        var errmsg: String;
+
+        this.Errors = Tarray();
+
+        /* уникальный идентификатор операции во внешней системе */
+        in_item = InputFile( OPER_EXT_ID );
+        if ( in_item != "" )
+            this.ext_id = in_item;
+        else
+            //aMsg[aMsg.size]
+            this.Errors[this.Errors.size] = "(1) Не задан номер уникального идентификатора операции во внешней системе";
+        end;
+
+        /* номер доп.офиса */
+        in_item = ToOEM(InputFile( OPER_BRANCH ));
+        if ( in_item != "" )
+            if (getBranch(in_item) != -1)  
+                this.branch = getBranch(in_item);
+            else
+                this.Errors[this.Errors.size] = "(1) Неизвестный доп.офис";
+            end;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан номер доп.офиса";
+        end;
+
+        /* номер кассира jsCash */
+        in_item = InputFile( OPER_ID_CASHER );
+        if ( in_item != "" )
+            this.oper_id = int(in_item);
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан номер операциониста RS-Reatil";
+        end;
+
+        /* ФИО кассира jsCash */
+        in_item = ToOEM(InputFile( OPER_FIO_CASHER ));
+        if ( in_item != "" )
+            this.oper_fio = in_item;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан номер операциониста RS-Reatil";
+        end;
+
+        /* дата опер.дня */
+        in_item = InputFile( OPER_CURDATE );
+        if ( in_item != "" )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.curdate = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана дата опер.дня";
+        end;
+    
+        /* тип операции */
+        in_item = InputFile( OPER_KIND_OPER );
+        if ( in_item != "" )
+            this.kind_oper = int(in_item);
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан номер операции";
+        end;
+
+        /* физическая дата проведения операции */
+        in_item = InputFile( OPER_DATE_M );
+        if ( in_item != "" )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.date_m = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана физическая дата проведения операции";
+        end;
+        /* физическая время проведения операции */
+        in_item = InputFile( OPER_TIME_M );
+        if ( in_item != "" )
+            this.time_m = time(in_item);
+        else
+            this.Errors[this.Errors.size] = "(1) Не задано физическое время проведения операции";
+        end;
+        /* валюта, которую банк принимает */
+        in_item = InputFile( OPER_INCOME_VAL );
+        if ( in_item != "" )
+            this.income_val = in_item;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана валюта, которую банк принимает";
+        end;
+        /* сумма, которую банк принимает */
+        in_item = InputFile( OPER_INCOME_AMOUNT );
+        if ( in_item != "" )
+            this.income_amount = numeric(in_item)/100;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана сумма, которую банк принимает";
+        end;
+        /* валюта, которую банк отдает */
+        in_item = InputFile( OPER_OUT_VAL  );
+        if ( in_item != "" )
+            this.out_val = in_item;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана валюта, которую банк отдает";
+        end;
+        /* сумма, которую банк отдает */
+        in_item = InputFile( OPER_OUT_AMOUNT );
+        if ( in_item != "" )
+            this.out_amount = numeric(in_item)/100;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана сумма, которую банк отдает";
+        end;
+        /* курс по которому прошла операция */
+        in_item = InputFile( OPER_KURS );
+        if ( in_item != "" )
+            this.kurs = double(in_item)/10000;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан курс по которому прошла операция";
+        end;
+
+        /* курс ЦБ, действовавший на момент совершения операции */
+        in_item = InputFile( OPER_CBRATE );
+        if ( in_item != "" )
+            this.cbrate = double(in_item)/10000;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан курс ЦБ, действовавший на момент совершения операции";
+        end;
+
+        /* Ext_Id смены курсов */
+        in_item = InputFile( OPER_RATECHNG );
+        if ( in_item != "" )
+            this.ratechng = in_item;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан идентификатор смены курсов";
+        end;
+
+        
+        this.sname             = ToOEM(InputFile( OPER_SNAME            ));
+        this.name              = ToOEM(InputFile( OPER_NAME             ));
+        this.pname             = ToOEM(InputFile( OPER_PNAME            ));
+        this.resident          = InputFile( OPER_RESIDENT         );
+        this.clientdoctype     = InputFile( OPER_CLIENTDOCTYPE    );
+        this.clientdocseria    = InputFile( OPER_CLIENTDOCSERIA   );
+        this.clientdocnumber   = InputFile( OPER_CLIENTDOCNUMBER  );
+        this.clientdocinfo     = ToOEM(InputFile( OPER_CLIENTDOCINFO    ));
+        in_item = InputFile( OPER_CLIENTDOCDATE );
+        if ( (in_item != "") and (in_item != "0:00:00") )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.clientdocdate = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+        else
+            this.clientdocdate = date(0,0,0);
+        end;
+
+        this.clientaddress     = ToOEM(InputFile( OPER_CLIENTADDRESS     ));
+        this.clientcountrycode = InputFile( OPER_CLIENTCOUNTRYCODE  );
+        this.inn               = InputFile( OPER_INN                );
+        this.clientphone       = InputFile( OPER_CLIENTPHONE        );
+
+        in_item = InputFile( OPER_CLIENTBIRTHDAY  );
+        if ( (in_item != "") and (in_item != "0:00:00") )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.clientbirthday = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+        else
+            this.clientbirthday = date(0,0,0)
+        end;
+
+
+        this.clientbirthplace  = ToOEM(InputFile( OPER_CLIENTBIRTHPLACE  ));
+        this.ordernum          = InputFile( OPER_ORDERNUM          );
+        this.ground            = ToOEM( InputFile( OPER_GROUND ) );
+    end;
+
+    macro Check()
+        private var exoperat = TBFile("exoperat.dbt", "r",  0, null, "exchange.def"); /*ВОО*/
+        private var i = 0;
+
+        // ключа подходящего нет, поэтому полный перебор талицы
+        exoperat.Rewind();
+        while( exoperat.Next() )
+            if ( 
+                 ( index(exoperat.rec.reserve, this.Branch + this.ext_id) > 0 ) and
+                 ( 
+                   ( exoperat.rec.action != 2 ) and 
+                   ( exoperat.rec.action != 11) 
+                 )
+               )
+                this.Errors[this.Errors.size] = "(1) Операция с таким ID уже загружена в RS-Retail";
+                return;
+            end;
+            i = i + 1;
+        end;
+
+        if(this.curdate != {curdate} )
+            this.Errors[this.Errors.size] = "(1) Не совпадают текущий опердень и опердень смены в файле";
+        end;
+    end;
+
+    macro PrepareExoperat()
+        var stat = True;
+        var dtRate, tmRate;
+        var Rate_Ref;
+
+        ClearRecord(exoperat);
+        If (Branch<10)
+            exoperat.Reserve          = "0"+ this.Branch + this.ext_id + "|" + this.date_m + "|" + time(this.time_m);     
+        Else
+           exoperat.Reserve           = this.Branch + this.ext_id + "|" + this.date_m + "|" + time(this.time_m);     
+        end;
+
+        if ( NumRealFNcash() != this.Branch )
+            this.Errors[this.Errors.size] = "(2) Не верно задан номер доп. офиса";
+            return False;
+        end;
+
+             
+        exoperat.Branch            = this.Branch;     
+        exoperat.Brigade           = 1;               
+        exoperat.CurDate           = this.curdate;    
+
+        exoperat.Oper              = {oper};
+
+        exoperat.NumSession        = 0;               
+        exoperat.Kind_Oper         = this.kind_oper;  
+        exoperat.SubOper           = 0;               
+        exoperat.Date              = this.date_m; 
+        exoperat.Time              = time(this.time_m); 
+        exoperat.Reestr_Ref        = 0;               
+        exoperat.State_Ref         = 2;               
+        exoperat.Action            = 0;               
+                                                 
+                                                      
+        if ( this.income_val == "810" )               
+            exoperat.IncomeRefVal      = 1;           
+            exoperat.IncomeTypeValue   = 1;           
+            exoperat.IncomeCodIntValue = 0;           
+            exoperat.IncomeType        = 0;           
+            exoperat.IncomeCoins       = 0;           
+                                                      
+        elif ( this.income_val == "840" )             
+            exoperat.IncomeRefVal      = 2;           
+            exoperat.IncomeTypeValue   = 1;           
+            exoperat.IncomeCodIntValue = 1;           
+            exoperat.IncomeType        = 0;           
+            exoperat.IncomeCoins       = 0;           
+                                                      
+        elif ( this.income_val == "978" )             
+            exoperat.IncomeRefVal      = 171;         
+            exoperat.IncomeTypeValue   = 1;           
+            exoperat.IncomeCodIntValue = 5;             
+            exoperat.IncomeType        = 0;             
+            exoperat.IncomeCoins       = 0;             
+        else
+
+            this.Errors[this.Errors.size] = "(2) Не верно задана валюта, которую банк принимает. Допустимы след.коды валют: 810, 840, 978";
+        end;
+        
+        if ( this.out_val == "810" )
+            exoperat.OutRefVal      = 1;        
+            exoperat.OutTypeValue   = 1;        
+            exoperat.OutCodIntValue = 0;        
+            exoperat.OutType        = 0;        
+            exoperat.OutCoins       = 0;        
+            
+        elif ( this.out_val == "840" )
+            exoperat.OutRefVal      = 2;        
+            exoperat.OutTypeValue   = 1;        
+            exoperat.OutCodIntValue = 1;        
+            exoperat.OutType        = 0;        
+            exoperat.OutCoins       = 0;        
+            
+        elif ( this.out_val == "978" )
+            exoperat.OutRefVal      = 171;      
+            exoperat.OutTypeValue   = 1;        
+            exoperat.OutCodIntValue = 5;        
+            exoperat.OutType        = 0;        
+            exoperat.OutCoins       = 0;        
+        else
+           this.Errors[this.Errors.size] = "(2) Не верно задана валюта, которую банк отдает. Допустимы след.коды валют: 810, 840, 978";
+        end;
+        
+        exoperat.IncomeAmount      = this.income_amount;   
+        exoperat.OutAmount         = this.out_amount;      
+
+//        Rate_Ref = CChangeRate.FindRatechng(this.ratechng);
+// ПО письму Климина от 14022013
+         Rate_Ref = CChangeRate.FindRatechng(this.Branch + this.ratechng);
+
+        if (Rate_Ref == -1)
+            this.Errors[this.Errors.size] = "(2) Не найдена смена курсов";
+        else
+            exoperat.Rate_Ref = Rate_Ref;
+        end;
+
+        exoperat.Sess_Ref          = 0;               
+
+        exoperat.NotConfirmed      = 1;
+        exoperat.Kurs              = this.Kurs;
+
+        exoperat.CBRate            = this.CBRate;
+        exoperat.Scale             = 1;
+                     
+        
+        // exoperat.ClientCode        = ;   
+        exoperat.Sname             = this.sname;                     
+        exoperat.Name              = this.name;                      
+        exoperat.Pname             = This.pname;                     
+                      
+                      
+
+        if (this.resident == 1)
+            exoperat.Resident      = "X";          
+        else
+            exoperat.Resident      = "";
+        end;
+        
+        exoperat.ClientDocType     = this.ClientDocType    ;
+        exoperat.ClientDocNumber   = this.ClientDocNumber  ;
+        exoperat.ClientDocSeria    = this.ClientDocSeria   ;
+        exoperat.ClientDocInfo     = this.ClientDocInfo    ;
+        exoperat.ClientAddress     = this.ClientAddress    ;
+        exoperat.ClientDocDate     = this.ClientDocDate    ;
+        exoperat.ClientCountryCode = this.ClientCountryCode;
+        exoperat.INN               = this.INN              ;
+        exoperat.ClientPhone       = this.ClientPhone      ;
+        exoperat.ClientBirthday    = this.ClientBirthday   ;
+        exoperat.ClientBirthPlace  = this.ClientBirthPlace ;
+        exoperat.Ground            = this.ground;
+        exoperat.OtherBranch       = this.Branch;
+                      
+        exoperat.ApplicationKind   = 260;
+        exoperat.ApplicationKey    = FormApplicationKey(260);
+
+        exoperat.OrderNum          = 125;
+        return stat;
+    end;
+
+    macro PrepareOpParm()
+        var stat = True;
+
+        ClearRecord(op_parm);
+
+        op_parm.ApplicationKind    = exoperat.ApplicationKind; // Идентификатор                
+        op_parm.ApplicationKey     = exoperat.ApplicationKey;  //   операции                   
+        op_parm.Date               = exoperat.CurDate;         // Дата                         
+        op_parm.Operation          = exoperat.Kind_Oper;       // Номер операции соотв. БП     
+        op_parm.SubOp              = exoperat.SubOper;         // Подвид операции              
+        op_parm.Oper               = exoperat.Oper;            // Операционист                 
+        op_parm.iToken             = exoperat.OrderNum;        // Номер документа (жетона)     
+ 
+        return stat; 
+    end;
+
+
+    macro Insert()
+        private var stat;
+
+        InitGDDList();
+
+        stat = InterDesk_InitDocBunch (exoperat.ApplicationKind, exoperat.ApplicationKey, op_parm);
+        if ( not stat )
+            this.Errors[this.Errors.size] = "(3) Операция НЕ инициализирована!";
+            return False;
+        end;
+
+        stat = InsertExchDocToGDDList( exoperat );
+        if ( not stat )
+            this.Errors[this.Errors.size] = "(3) Операция НЕ вставлена в БД!";
+            return False;
+        end;
+
+// Korneev
+        //stat =  CarryGDDList();    
+        stat =  ProcessConTrn( 1, "Macro_CarryGDDList" ); //Korneev
+        if ( stat != TRUE )
+            this.Errors[this.Errors.size] = getError( stat);
+            return False;
+        end;
+
+        InterDesk_EndDocBunch(); 
+        DoneGDDList();
+
+        return True;
+    end;
+
+    macro GetResident()
+        if (this.resident == 1)
+            return "да";
+        else
+            return "нет";
+        end;
+    end;
+
+    if (ValType (InputFile) == V_TXTFILE)
+        Constructor(InputFile);
+    end;
+end;

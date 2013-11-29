@@ -1,0 +1,318 @@
+Import vars, BankInter, DeskInter, ExchangeInter, DeprIntr, or_rep_h, Cur_Rate, rtreport, sortRN, "define.mac", "office.mac";
+
+import fileop, rsexts;
+
+Import imp_ratechng, imp_rate, imp_operation, imp_log, imp_lib; 
+
+/* Исходный текстовый файл */
+file InputFile() txt 2048; 
+
+private const
+  ArcExt  = ".zip",
+  ARJ_DIR = "..\\ARJ\\"; //Путь к архиватору из папки MAC
+
+var
+  ComSpec = GetEnv( "COMSPEC" );
+
+
+class COperationLoader()
+
+    var countIn = 0, countErrIn = 0; // число операций
+    var countRate = 0, countErrRate = 0; // число курсов
+
+    var rateChanges = Tarray(); // массив смен курсов
+     
+
+
+    var logTrans;
+    var PatternFile = "..\\Import\\EXCHANGE\\*.txt"; /* Маска исходного текстового файла   */
+    var NameInputFile;
+
+    var logfile;
+    var onelogfile;
+
+    macro Constructor()
+        this.logfile = GetRegVal( "BANK_INI\\ОБЩИЕ ПАРАМЕТРЫ\\ДИРЕКТОРИИ\\TEXTDIR", true ) + "Import_Exchange_Documents.log";
+        this.onelogfile = GetRegVal( "BANK_INI\\ОБЩИЕ ПАРАМЕТРЫ\\ДИРЕКТОРИИ\\TEXTDIR", true ) + "imp_exch_docs."+MkStr("0",3-StrLen(String(GetCNum())))+String(GetCNum());
+        this.logTrans = CImportLog(logfile, onelogfile);
+    end;
+
+    // --- Деструктор ---
+    macro Destructor()
+        // закрываем файл
+        Close( InputFile );
+        exit(1);
+    end;
+
+    //Возвращает короткое имя файла
+    macro ShortFileName (PathName)
+        Var Name, Ext;
+
+        SplitFile (PathName, Name, Ext);
+        Return Name + Ext;
+    End;
+
+
+    /* Архивация текстовых файлов */
+    macro CompressFiles()
+
+        var txtDir = "..\\TXTFILE\\";
+        var impDir = "..\\IMPORT\\EXCHANGE\\";
+        var arcDir = "..\\Import\\EXCHANGE\\ARCHIVE\\";
+        var Command;
+
+        var arcName = String( {curdate} ) + "_" + String( NumFNCash() ) + "_" + String( GetCNum() ) + "_" + String( Random(100) );
+
+        
+        /* Может не получиться запустить cmd.exe (может прав нет, может еще из-за чего) */
+        if( Run( ComSpec, "/C") != 0 )
+            msgbox("Не удалось выполнить архивацию транспортных файлов.\n"+
+                   "Файл не найден или недостаточно прав для запуска: cmd.exe\n"+
+                   "Обратитесь к Администратору.");
+            return False;
+        end;  
+
+        Command = ARJ_DIR + "PKZIP25.EXE " + "-add " + arcDir + arcName +"\.zip " + impDir + this.ShortFileName( this.NameInputFile )
+                                                                                  + " " + txtDir + this.ShortFileName( this.logfile ) 
+                                                                                  + " " + txtDir + this.ShortFileName( this.onelogfile);
+  
+        Run( ComSpec, "/C " + Command);
+        DelFile( impDir + this.ShortFileName( this.NameInputFile ) );
+
+    end;
+
+    
+    macro Process()
+        if ( SelectFile( NameInputFile, this.PatternFile, "Выберите файл для загрузки" ) )
+            Message(" Читаем входящий файл");
+            if ( Open( InputFile, NameInputFile ) )
+                
+                this.logTrans.Header( NameInputFile, NumRealFNcash());
+
+                SetDelim("|"); // разделитель
+                this.ProcessInputFile();
+        
+                this.logTrans.EndLog({oper});
+                Message("");
+
+            else
+                logTrans.MsgLn("Error: Ошибка при открытии файлов. Работа завершена.");
+            end;
+        else
+            logTrans.MsgLn("Info: Вы отказались от выбора исходного текстового файла. Работа завершена.");
+        end;
+    end;
+
+    macro ProcessInputFile()
+        private var stat;
+        private var rate_section = false;
+        private var oper_section = false;
+
+
+        ReWind (InputFile);
+        stat = OpenDepFiles();
+        if(stat)
+            while (Next(InputFile) )
+                if (index(InputFile.str, CRATE_SECTION) != 0 )
+                    // обнаружили начало секции курсов 
+
+                    rate_section = true;
+                    oper_section = false;
+                    
+                    continue; // пропустим это строку и перейдем на следущую
+
+                elif (index(InputFile.str, CEND_RATE_SECTION) != 0 )
+                    // обнаружили окончание секции курсов
+
+                    rate_section = false;
+                    oper_section = false;
+
+                    // Сохраним все смены в БД
+                    // 1 смена - 1 транзакция 
+
+                    if (not this.SaveAllChangeRate())
+                        // Если были ошибки при загрузке, то прервем выполение
+                        break;
+                    end;
+
+                    continue; // пропустим это строку и перейдем на следущую
+
+                elif (index(InputFile.str, COPER_SECTION) != 0 )
+                    // обнаружили начало секции операций 
+                    this.logTrans.HeaderIncoming();
+
+                    rate_section = false;
+                    oper_section = true;
+                    
+                    continue; // пропустим это строку и перейдем на следущую
+
+                elif (index(InputFile.str, CEND_OPER_SECTION) != 0 )
+                    // обнаружили окончание секции операций 
+                    this.logTrans.BotIncoming();
+
+                    rate_section = false;
+                    oper_section = false;
+                    
+                    continue; // пропустим это строку и перейдем на следущую
+                end;
+
+                if (rate_section == true)
+                    this.countRate = this.countRate + 1;    
+                    Message("Обработка строки курсов номер: " + this.countRate);
+                    stat = this.ProcessRowRate(InputFile);
+
+                    if (stat == False)
+                        this.countErrRate = this.countErrRate + 1;
+                    end;
+                elif (oper_section == true)
+                    this.countIn = this.countIn + 1;    
+                    Message("Обработка строки операции номер: " + this.countIn);
+                    stat = this.ProcessRowOperation(InputFile);
+
+                    if (stat == False)
+                        this.countErrIn = this.countErrIn + 1;
+                    end;
+                end;
+            end;
+
+            this.logTrans.Total();
+        end;
+        CloseDepFiles();
+    end;
+
+    macro ProcessRowRate(input_file)
+        var change, last_change;
+
+        if ( this.rateChanges.size == 0 )
+            // Если смен еще нет, то создадим новую смену
+            change = CChangeRate(input_file);
+
+            // и добавим в смену курс
+            change.Rates[change.Rates.size] = CRate(input_file);
+
+            // добавим саму смену в массив cмен
+            this.rateChanges[this.rateChanges.size] = change
+        else
+            // Если смены уже есть
+            last_change = this.rateChanges[this.rateChanges.size - 1];
+            // проверим этот курс относится к последней смене или нет 
+            if (last_change.ext_id == InputFile( RATE_EXT_ID ) )
+                // добавим в эту последнюю смену курс
+                //this.rateChanges[this.rateChanges.size - 1].Rates[change.Rates.size] = CRate(in_string);
+                last_change.Rates[last_change.Rates.size] = CRate(input_file);
+            else
+                // 
+                change = CChangeRate(input_file);
+
+                // и добавим в смену курс
+                change.Rates[change.Rates.size] = CRate(input_file);
+
+                // добавим саму смену в массив cмен
+                this.rateChanges[this.rateChanges.size] = change
+
+            end;
+        end;
+        return True;
+    end;
+
+    macro SaveAllChangeRate()
+        private var i = 0;
+
+        while ( i < this.rateChanges.size )
+
+            this.rateChanges[i].CheckRatechng(); 
+            if ( this.rateChanges[i].Errors.size() != 0 )
+                // в проверке возникли проблемы
+
+                // печатаем шапку для смены
+                this.logTrans.HeaderChangeRate( this.rateChanges[i].orderid );
+                this.logTrans.StringChangeRate( this.rateChanges[i] );
+                // печатаем подвал
+                this.logTrans.BotChangeRate( this.rateChanges[i] );
+
+                return false;
+            end;    
+
+            this.rateChanges[i].PrepareRatechng(); 
+            if ( this.rateChanges[i].Errors.size() != 0 )
+                // в подготовке возникли проблемы
+                // печатаем шапку для смены
+                this.logTrans.HeaderChangeRate( this.rateChanges[i].orderid );
+                this.logTrans.StringChangeRate( this.rateChanges[i] );
+                // печатаем подвал
+                this.logTrans.BotChangeRate( this.rateChanges[i] );
+
+                return false;
+            end;    
+
+            this.rateChanges[i].InsertRatechng(this.logTrans); 
+            if ( this.rateChanges[i].Errors.size() != 0 )
+                // в проводке возникли проблемы           
+                // печатаем шапку для смены
+                this.logTrans.HeaderChangeRate( this.rateChanges[i].orderid );
+                this.logTrans.StringChangeRate( this.rateChanges[i] );
+                // печатаем подвал
+                this.logTrans.BotChangeRate( this.rateChanges[i] );
+
+                return false;                             
+            end;
+
+            i = i + 1;
+        end;
+
+        return True;
+    end;
+
+    macro ProcessRowOperation(input_file)
+        var operation;
+        
+        operation = COperation(input_file);
+        if ( operation.Errors.size() != 0 )
+            // в конструкторе были проблемы
+            this.logTrans.StringIncoming( operation );
+            return false;
+        end;
+
+        operation.Check();
+        if ( operation.Errors.size() != 0 )
+            // в проверке возникли проблемы
+            this.logTrans.StringIncoming( operation );
+            return false;
+        end;    
+
+
+        operation.PrepareExoperat();
+        if ( operation.Errors.size() != 0 )
+            // в проверке возникли проблемы
+            this.logTrans.StringIncoming( operation );
+            return false;
+        end;    
+
+        operation.PrepareOpParm();
+        if ( operation.Errors.size() != 0 )
+            // в проверке возникли проблемы
+            this.logTrans.StringIncoming( operation );
+            return false;
+        end;    
+
+        operation.Insert();
+        this.logTrans.StringIncoming( operation ); 
+        if ( operation.Errors.size() != 0 )
+            // в проводке возникли проблемы           
+            return false;                             
+        end;
+
+        return True;
+    end;
+
+    Constructor()
+end;
+
+
+var loader = COperationLoader();
+loader.Process();
+
+loader.logTrans.Destructor();
+Message(" Архивируем файлы");
+debugbreak();
+loader.CompressFiles();

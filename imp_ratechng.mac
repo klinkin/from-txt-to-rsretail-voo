@@ -1,0 +1,270 @@
+Import vars, BankInter, CommonInter, DeskInter, ExchangeInter, DeprIntr, or_rep_h, Cur_Rate, "define.mac";
+Import imp_const, imp_lib, imp_rate;
+
+private var {curdate}, {oper};
+
+// Класс смены
+class CChangeRate(InputFile)
+    var 
+        ext_id           : String,        // 1 уникальный идентификатор смены в другой системе
+        branch           : String,        // 2 название доп.офиса
+        set_date         : Date,          // 3 физическая дата установки курса
+        set_time         : Time,          // 4 физическое время установки курса
+        start_date       : Date,          // 5 
+        start_time       : Time,          // 6 
+        stop_date        : Date,          // 7
+        stop_time        : Time,          // 8
+        orderid          : String;        // 9  Номер распоряжения
+
+    var Errors; // массив ошибок
+    var logger;
+
+    var Rates = TArray();                 // массив объектов курсов
+
+    var RateChng = TRecHandler( "ratechng.dbt", "exchange.def");
+
+    macro Constructor(InputFile)
+       
+        private var in_item: String; 
+        private var date_value: Date;
+        var errmsg: String;
+
+        this.Errors = Tarray();
+
+
+        /* уникальный идентификатор курса во внешней системе */
+        in_item = InputFile( RATE_EXT_ID );
+        if ( in_item != "" )
+            this.ext_id = in_item;
+        else
+            //aMsg[aMsg.size]
+            this.Errors[this.Errors.size] = "(1) Не задан номер уникального идентификатора операции во внешней системе";
+        end;
+
+        /* номер доп.офиса */
+        in_item = ToOEM(InputFile( RATE_BRANCH ));
+        if ( in_item != "" )
+            if (getBranch(in_item) != -1)  
+                this.branch = getBranch(in_item);
+            else
+                this.Errors[this.Errors.size] = "(1) Неизвестный доп.офис";
+            end;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан номер доп.офиса";
+        end;
+
+        /* физическая дата установки курса */
+        in_item = InputFile( RATE_SET_DATE );
+        if ( in_item != "" )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.set_date = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана физическая дата установки курсов";
+        end;
+
+        /* физическое время установки курса */
+        in_item = InputFile( RATE_SET_TIME );
+        if ( in_item != "" )
+            this.set_time = time(in_item);
+        else
+            this.Errors[this.Errors.size] = "(1) Не задано физическое время установки курсов";
+        end;
+
+        /* дата начала действия курса */
+        in_item = InputFile( RATE_START_DATE );
+        if ( in_item != "" )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.start_date = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+
+        else
+            this.Errors[this.Errors.size] = "(1) Не задана дата начала действия смены курсов";
+        end;
+        /* время начала действия курса */
+        in_item = InputFile( RATE_START_TIME );
+        if ( in_item != "" )
+            this.start_time = time(in_item);
+        else
+            this.Errors[this.Errors.size] = "(1) Не задано время начала действия смены курсов";
+        end;
+
+        /* дата окончания действия курса */
+        in_item = InputFile( RATE_STOP_DATE );
+        if ( in_item != "" )
+            if (StrToDate(in_item, date_value, errmsg))
+                this.stop_date = date_value;
+            else
+                this.Errors[this.Errors.size] = errmsg;
+            end;
+        else
+            this.stop_date = date(0,0,0)
+        end;
+
+        /* время окончания действия курса */
+        in_item = InputFile( RATE_STOP_TIME );
+        if ( in_item != "" )
+            this.stop_time = time(in_item);
+        else
+            this.stop_time = time(0,0,0);
+        end;
+
+        /* номер распоряжения */
+        in_item = InputFile( RATE_ORDERID );
+        if ( in_item != "" )
+            this.orderid = in_item;
+        else
+            this.Errors[this.Errors.size] = "(1) Не задан номер рапоряжения";
+        end;
+
+    end;
+
+    macro CheckRatechng()
+        // проверим текущий номер отделения
+        if( this.branch != NumFnCash() )
+            this.Errors[this.Errors.size] = "(1) Не совпадают номера доп.офиса в файле и офиса куда Вы зашли";
+        end;
+        // проверим текущий опердень
+        if( this.set_date != {curdate} )
+            this.Errors[this.Errors.size] = "(1) Не совпадают текущий опердень и опердень смены в файле";
+        end; 
+    end;
+
+    macro PrepareRatechng()
+        private var i = 0;
+        this.RateChng.Clear();
+
+
+        // Если StopDate задана то смену считаем закрытой, иначе открытой
+        if ( this.stop_date == date(0,0,0) )  
+            this.RateChng.rec.State_Ref    = 1;
+        else
+            this.RateChng.rec.State_Ref    = 3;
+        end;
+
+        this.RateChng.rec.Emp_Ref          = {oper};
+        this.RateChng.rec.StartDate        = this.start_date;
+        this.RateChng.rec.StartTime        = this.start_time;
+        this.RateChng.rec.StopDate         = this.stop_date;
+        this.RateChng.rec.StopTime         = this.stop_time;
+        this.RateChng.rec.SetDate          = this.set_date;
+        this.RateChng.rec.SetTime          = this.set_time;
+
+        // this.RateChng.rec.Descr            = this.ext_id;
+        // Fix bug(klimin)
+
+        this.RateChng.rec.Descr            = this.branch + this.ext_id;
+
+        this.RateChng.rec.Kind_Ref         = 1; // Основные курсы
+        this.RateChng.rec.Branch           = this.branch;
+        this.RateChng.rec.OrderID          = this.orderid;
+
+        var rates_count = this.Rates.size;
+
+        for ( i , 0, this.Rates.size - 1, 1) 
+            this.Rates[i].PrepareCurRate();
+        end;
+        // если в смене нет фейк курса для Рублей добавим его
+        this.Rates[this.Rates.size] = CRate.MakeFaikRURRate(this.ext_id);
+
+    end;
+
+    macro FindRatechng(_descr)
+        private var ratechng = TBFile("ratechng.dbt", "r",  0, null, "exchange.def"); /*Смены курсов*/ 
+        private var i = 0;
+
+        // ключа подходящего нет, поэтому полный перебор талицы, благо записей немного
+
+        ratechng.Rewind();
+        while( ratechng.Next() )
+            if (ratechng.rec.descr == _descr)
+                return ratechng.rec.id;
+            end;
+            i = i + 1;
+        end;
+        return -1;
+    end;
+
+    macro InsertRatechng(log)
+        private var stat;
+        var ratechng = TBFile("ratechng.dbt", "w",  0, null, "exchange.def"); /*Смены курсов*/ 
+        var cur_rate = TBFile("cur_rate.dbt", "w",  0, null, "exchange.def"); /*Курсы валют по сменам*/
+
+        this.logger = log;
+
+        // проверим, а не загружали ли мы раньше эту смену курсов. 
+        // Чтобы не задублировать смены при повторной загрузке того же файла.
+
+        if (this.FindRatechng(this.branch + this.ext_id) != -1 )
+            this.Errors[this.Errors.size] = "(3) Смена с таким ext_id из текстового файла уже загружена в RS-Retail";
+            return; 
+        end;
+
+        stat = ProcessConTrn(NULL, R2M(this, "DoTRN"), ratechng, cur_rate);
+        if (not stat)
+            this.Errors[this.Errors.size] = "(3) Ошибка при выполнении транзакции в RS-Retail";
+        end;
+    end;
+
+    macro DoTRN()
+        private var stat;
+        private var i = 0;
+        private var rates_count;
+
+        var ratechng = TBFile("ratechng.dbt", "w",  0, null, "exchange.def"); /*Смены курсов*/ 
+        var cur_rate = TBFile("cur_rate.dbt", "w",  0, null, "exchange.def"); /*Курсы валют по сменам*/
+
+        macro getMaxId()
+            ratechng.rec.id = 4294967296;
+            if (ratechng.GetLE() )
+                return ratechng.rec.id;
+            else
+               return -1;
+            end;
+        end;
+
+        // печатаем шапку для смены
+        this.logger.HeaderChangeRate( this.orderid );
+
+        this.RateChng.rec.ID  = getMaxId() + 1;
+        ratechng.Clear();
+        copy(ratechng, this.RateChng);
+        stat = ratechng.insert();
+
+        this.logger.StringChangeRate( this );
+        // печатаем подвал
+        this.logger.BotChangeRate( this );
+
+        rates_count = this.Rates.size;
+
+        // печатаем шапку для курсов
+        this.logger.HeaderRate();
+
+        if (stat)
+            while ( ( i < rates_count ) and (stat) )
+                cur_rate.Clear();
+                this.Rates[i].CurRate.rec.Change_Ref = ratechng.rec.id;
+                copy(cur_rate, this.Rates[i].CurRate);
+                stat = cur_rate.insert();
+                this.logger.StringRate(this.Rates[i]);
+                i = i + 1;
+            end;
+        end;
+
+        // печатаем подвал для курсов
+        this.logger.BotRate();
+
+        if ( not stat )
+            AbortTrn;
+        end;
+    end;
+
+    if (ValType (InputFile) == V_TXTFILE)
+        Constructor(InputFile);
+    end;
+end;
